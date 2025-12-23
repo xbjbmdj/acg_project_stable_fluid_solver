@@ -5,6 +5,7 @@
 
 ```bash
 mkdir build
+cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O3 -march=native -ffast-math -fopenmp"
 cmake --build . -j
 ./demo3d_obj
