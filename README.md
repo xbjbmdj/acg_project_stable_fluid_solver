@@ -3,11 +3,13 @@
 
 ## Usage
 
-'''
+```bash
 mkdir build
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O3 -march=native -ffast-math -fopenmp"
 cmake --build . -j
 ./demo3d_obj
-'''
+```
+
+
 
 Input two numbers, separated by a space. The first number is # of grids side length, the second number is the time steps you need to simulate. e.g. 50 40
