@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <algorithm>
+#include <array>
 
 // 可选 OpenMP 加速宏，编译时可定义为 0 以禁用
 #ifndef CG_USE_OPENMP
@@ -35,8 +36,8 @@ public:
     static bool solve(std::function<void(const std::vector<double>&, std::vector<double>&)> A_mult,
                      const std::vector<double>& d,
                      std::vector<double>& p,
-                     double tol = 1e-5,
-                     int max_iter = 500,
+                     double tol = 2e-5,
+                     int max_iter = 1000,
                      const std::vector<double>* p0 = nullptr) {
 
         int n = (int)d.size();
@@ -148,8 +149,8 @@ class pressure_solver{
 		int find_index(int i, int j, int k, int n_dim=5){
 			return (i-1)*n_dim*n_dim+(j-1)*n_dim+k-1;
 		}
-		bool solve(bool print, int gridtype[123][123][123],  int n_dim, std::vector<double> d, std::vector<double>& p
-            , float J[10][1234567], double constant_B, float rigid_m[10]){
+		bool solve(bool print, int gridtype[234][234][234],  int n_dim, std::vector<double> d, std::vector<double>& p
+            , float J[10][12345678], double constant_B, float rigid_m[10]){
         // runtime tuning to reduce per-thread memory and arenas (help WSL2)
         //setenv("MALLOC_ARENA_MAX", "1", 1);
         //setenv("OMP_STACKSIZE", "4M", 1);
@@ -170,25 +171,33 @@ class pressure_solver{
 			for(int i=1;i<=n_dim;i++)
 			for(int j=1;j<=n_dim;j++){
             for(int k=1;k<=n_dim;k++){
+                int t=find_index(i,j,k,n_dim);
                 if(gridtype[i][j][k]==1){
-				    Adiag[find_index(i,j,k,n_dim)]=12-gridtype[i-1][j][k]-gridtype[i+1][j][k]-gridtype[i][j-1][k]-gridtype[i][j+1][k]-gridtype[i][j][k-1]-gridtype[i][j][k+1];
-                    if(gridtype[i-1][j][k]==1) Adiagminusi[find_index(i,j,k,n_dim)]=-1;
-				    if(gridtype[i+1][j][k]==1) Adiagplusi[find_index(i,j,k,n_dim)]=-1;
-                    if(gridtype[i][j-1][k]==1) Adiagminusj[find_index(i,j,k,n_dim)]=-1;
-                    if(gridtype[i][j+1][k]==1) Adiagplusj[find_index(i,j,k,n_dim)]=-1;
-                    if(gridtype[i][j][k-1]==1) Adiagminusk[find_index(i,j,k,n_dim)]=-1;
-                    if(gridtype[i][j][k+1]==1) Adiagplusk[find_index(i,j,k,n_dim)]=-1;
+				    Adiag[t]=12-gridtype[i-1][j][k]-gridtype[i+1][j][k]-gridtype[i][j-1][k]-gridtype[i][j+1][k]-gridtype[i][j][k-1]-gridtype[i][j][k+1];
+                    if(gridtype[i-1][j][k]==1) Adiagminusi[t]=-1;
+				    if(gridtype[i+1][j][k]==1) Adiagplusi[t]=-1;
+                    if(gridtype[i][j-1][k]==1) Adiagminusj[t]=-1;
+                    if(gridtype[i][j+1][k]==1) Adiagplusj[t]=-1;
+                    if(gridtype[i][j][k-1]==1) Adiagminusk[t]=-1;
+                    if(gridtype[i][j][k+1]==1) Adiagplusk[t]=-1;
                 }
                 else if(gridtype[i][j][k]==0){
-                    Adiag[find_index(i,j,k,n_dim)]=1.0;
-                    d[find_index(i,j,k,n_dim)]=0.0;
+                    Adiag[t]=1.0;
+                    d[t]=0.0;
                 }
 			} 
         }
         //std::cout<<"Successfully built A matrix components and d\n";
-            auto A_mult = [&rigid_m, &constant_B,&J,&Adiag,&Adiagminusi,&Adiagminusj,&Adiagplusi,&Adiagplusj,&Adiagplusk,&Adiagminusk, n_dim](const std::vector<double>& x, std::vector<double>& result) {
+            // Precompute scaleBase = constant_B * (1.0 / rigid_m[m]) for modes 1..6
+            const int num_modes = 6;
+            std::array<double, 7> scaleBase{{0.0,0.0,0.0,0.0,0.0,0.0,0.0}};
+            for (int m = 1; m <= num_modes; ++m) {
+                scaleBase[m] = constant_B * (1.0 / rigid_m[m]);
+            }
+
+            auto A_mult = [&rigid_m, &scaleBase, &J, &Adiag, &Adiagminusi, &Adiagminusj, &Adiagplusi, &Adiagplusj, &Adiagplusk, &Adiagminusk, n_dim](const std::vector<double>& x, std::vector<double>& result) {
                 const size_t total = (size_t)n_dim * n_dim * n_dim;
-                result.resize(total);
+                //result.resize(total);
 
                 // 1) base A*x from diag and neighbor entries
 #if CG_USE_OPENMP
@@ -211,22 +220,46 @@ class pressure_solver{
                 }
 
                 // 2) add the contribution of J * M^{-1} * J^T
-                const int num_modes = 6; 
-                std::vector<double> temp(num_modes + 1, 0.0);
-                for (int m = 1; m <= num_modes; ++m) {
-                    double s = 0.0;
+                // Fuse the J*x reductions into a single pass to reduce memory traffic,
+                // and then do a single pass to add contributions for all modes.
+                std::array<double, 7> temp; temp.fill(0.0);
+
 #if CG_USE_OPENMP
-#pragma omp parallel for reduction(+:s) schedule(static)
-#endif
-                    for (size_t c = 0; c < total; ++c) s += (double)J[m][c] * x[c];
-                    temp[m] = s;
+                // Parallel fused reduction: each thread accumulates into a local array
+                int nt = omp_get_max_threads();
+                std::vector<std::array<double,7>> local_acc(nt);
+                for (int ti = 0; ti < nt; ++ti) local_acc[ti].fill(0.0);
+
+#pragma omp parallel
+                {
+                    int tid = omp_get_thread_num();
+                    auto &local = local_acc[tid];
+#pragma omp for schedule(static)
+                    for (size_t c = 0; c < total; ++c) {
+                        double xc = x[c];
+                        for (int m = 1; m <= num_modes; ++m) local[m] += (double)J[m][c] * xc;
+                    }
                 }
-                for (int m = 1; m <= num_modes; ++m) {
-                    double scale = constant_B * (1.0 / rigid_m[m]) * temp[m];
+                // reduce per-thread accumulators
+                for (int ti = 0; ti < nt; ++ti) for (int m = 1; m <= num_modes; ++m) temp[m] += local_acc[ti][m];
+#else
+                for (size_t c = 0; c < total; ++c) {
+                    double xc = x[c];
+                    for (int m = 1; m <= num_modes; ++m) temp[m] += (double)J[m][c] * xc;
+                }
+#endif
+
+                // compute scaled contributions and add in a single pass
+                std::array<double,7> scale; scale.fill(0.0);
+                for (int m = 1; m <= num_modes; ++m) scale[m] = scaleBase[m] * temp[m];
+
 #if CG_USE_OPENMP
 #pragma omp parallel for schedule(static)
 #endif
-                    for (size_t t = 0; t < total; ++t) result[t] += scale * (double)J[m][t];
+                for (size_t t = 0; t < total; ++t) {
+                    double acc = 0.0;
+                    for (int m = 1; m <= num_modes; ++m) acc += scale[m] * (double)J[m][t];
+                    result[t] += acc;
                 }
             };
 
