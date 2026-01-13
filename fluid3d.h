@@ -1,37 +1,13 @@
 #pragma once
-#include "projection_step_rigid.h"
-#include "solid.h"
-#include <algorithm>
 #include <assert.h>
+
+#include <algorithm>
 #include <cmath>
 #include <queue>
 #include <vector>
-// 从拓展后的场里面采样，目标5分钟，实际8:10
-// 开桶，用来统计每个格子具有多少个粒子，目标15分钟，实际11:42
-// 重新设定filled，流体为1，空气为0，目标15分钟
-// 目标15分钟弄完particles的更新
-// 改成曼哈顿距离，目标10分钟，实际
-// 添加对容器壁的支持，目标30分钟，实际38分钟
 
-// 实现矩阵J，目标15分钟，实际17分钟
-// 实现矩阵B，目标30分钟，实际16:17-17:01
-
-// 2025.12.20 19:30-自由写1.5小时
-
-// 2025.12.21 20:00起
-// 20:15-45 先解决算法正确性问题,30min解决压力算错问题
-// 20:45-23:45
-
-// 2025.12.22 10:55-11:16 解决流体位置不对的问题，目标15分钟，实际21分钟
-// 2025.12.23 10:45起 把矩阵乘法从n^6改成n^3，15/15分钟
-// 改出来一个好一点的demo,20/15分钟
-// 整理代码，新建一个文件夹，只保留有用部分。代码总共76kb，起码减少10%
-// 上传github，11:20-
-
-//2025.12.26 找到check_filled的问题出在哪里，15分钟
-// 解决不真实问题
-// 搞定渲染pipeline，14:40-  /20分钟
-
+#include "projection_step_rigid.h"
+#include "solid.h"
 
 struct Fluid {
   enum Field {
@@ -53,12 +29,12 @@ struct Fluid {
   std::vector<bool> old_is_rigid_body;
   std::vector<bool> danger;
   change3d::RigidBody *m_rigid =
-      nullptr; // optional pointer to an external rigid body
+      nullptr;  // optional pointer to an external rigid body
   std::vector<float> x_pos, y_pos, z_pos;
   std::vector<int> statistic;
-  std::vector<float> phi; // level set for free surface
+  std::vector<float> phi;  // level set for free surface
   bool hasFreeSurface = false;
-  float overRelaxation = 1.9f; // default if not set externally
+  float overRelaxation = 1.9f;  // default if not set externally
   // u[0.5,1]指的是u[0,1]，u[1.5,1]指的是u[1,1]
   // v[1,0.5]指的是v[1,0]，v[1,1.5]指的是v[1,1]
 
@@ -81,8 +57,9 @@ struct Fluid {
     newM.assign(numCells, 0.0f);
     phi.assign(numCells, 0.0f);
     statistic.assign(numCells, 0);
-    filled.assign(numCells, false);      // true means fluid cell by default
-    is_container.assign(numCells, true); // 先全部设成true，初始化的时候需要注意
+    filled.assign(numCells, false);  // true means fluid cell by default
+    is_container.assign(numCells,
+                        true);  // 先全部设成true，初始化的时候需要注意
     is_rigid_body.assign(numCells, false);
   }
   int index(int i, int j, int k) const {
@@ -91,16 +68,18 @@ struct Fluid {
   // 2D index wrapper for backward compatibility (assumes k=0 slice)
   int index(int i, int j) const { return i + j * numX; }
   void store_is_rigid_body() { old_is_rigid_body = is_rigid_body; }
-  void print_all_rigid_occupied(bool print_rigid, bool print_fluids_too = false) {
-    if(print_rigid){
-      for(int i=1;i<=numX-2;i++)
-      for(int j=1;j<=numY-2;j++)
-      for(int k=1;k<=numZ-2;k++){
-          int c=index(i,j,k);
-          if(is_rigid_body[c]){
-              std::cout<<"Rigid occupies cell: ("<<i<<","<<j<<","<<k<<")\n";
+  void print_all_rigid_occupied(bool print_rigid,
+                                bool print_fluids_too = false) {
+    if (print_rigid) {
+      for (int i = 1; i <= numX - 2; i++)
+        for (int j = 1; j <= numY - 2; j++)
+          for (int k = 1; k <= numZ - 2; k++) {
+            int c = index(i, j, k);
+            if (is_rigid_body[c]) {
+              std::cout << "Rigid occupies cell: (" << i << "," << j << "," << k
+                        << ")\n";
+            }
           }
-      }
     }
     if (print_fluids_too) {
       for (int i = 5; i <= 5; i++)
@@ -117,8 +96,8 @@ struct Fluid {
 
   void replace_rigid_body_fluid() {
     // 对每个格子
-    old_filled=filled;
-    //把danger都设为0
+    old_filled = filled;
+    // 把danger都设为0
     std::fill(danger.begin(), danger.end(), false);
     for (int i = 1; i <= numX - 2; i++)
       for (int j = 1; j <= numY - 2; j++)
@@ -126,13 +105,14 @@ struct Fluid {
           int c = index(i, j, k);
           // 如果上一步是刚体，这一步不是刚体，那么用流体填充
           if (old_is_rigid_body[c] && !is_rigid_body[c]) {
-            is_container[c] = false; filled[c] = false;
+            is_container[c] = false;
+            filled[c] = false;
             // if(old_filled[index(i-1,j,k)] || old_filled[index(i+1,j,k)] ||
             //    old_filled[index(i,j-1,k)] || old_filled[index(i,j+1,k)] ||
             //    old_filled[index(i,j,k-1)] || old_filled[index(i,j,k+1)]){
             //     filled[c] = true;
-            //     //std::cout<<"Filling cell ("<<i<<","<<j<<","<<k<<") with fluid as rigid body moved away.\n";
-            //     danger[c]=true;
+            //     //std::cout<<"Filling cell ("<<i<<","<<j<<","<<k<<") with
+            //     fluid as rigid body moved away.\n"; danger[c]=true;
             //   }
             //   else{
             //     filled[c] = false;
@@ -216,8 +196,8 @@ struct Fluid {
     }
   }
 
-  void calculate_extended_velocity() { // Extrapolate from existing filled cells
-                                       // using BFS
+  void calculate_extended_velocity() {  // Extrapolate from existing filled
+                                        // cells using BFS
     // Propagate u, v, w values outward from filled cells on their
     // respective staggered grids using BFS in 3D.
 
@@ -232,11 +212,9 @@ struct Fluid {
       for (int ci = 1; ci <= numX - 2; ++ci) {
         for (int cj = 1; cj <= numY - 2; ++cj) {
           for (int ck = 1; ck <= numZ - 2; ++ck) {
-            if (!filled[index(ci, cj, ck)])
-              continue;
+            if (!filled[index(ci, cj, ck)]) continue;
             for (int ui = ci - 1; ui <= ci; ++ui) {
-              if (ui < 0 || ui > numX - 2)
-                continue;
+              if (ui < 0 || ui > numX - 2) continue;
               int uidx = index(ui, cj, ck);
               if (!seen[uidx]) {
                 seen[uidx] = 1;
@@ -262,15 +240,11 @@ struct Fluid {
           int ni = ci + di[m];
           int nj = cj + dj[m];
           int nk = ck + dk[m];
-          if (ni < 0 || ni > numX - 2)
-            continue;
-          if (nj < 1 || nj > numY - 2)
-            continue;
-          if (nk < 1 || nk > numZ - 2)
-            continue;
+          if (ni < 0 || ni > numX - 2) continue;
+          if (nj < 1 || nj > numY - 2) continue;
+          if (nk < 1 || nk > numZ - 2) continue;
           int nidx = index(ni, nj, nk);
-          if (seen[nidx])
-            continue;
+          if (seen[nidx]) continue;
           extendedu[nidx] = extendedu[cur];
           seen[nidx] = 1;
           q.push(nidx);
@@ -287,11 +261,9 @@ struct Fluid {
       for (int ci = 1; ci <= numX - 2; ++ci) {
         for (int cj = 1; cj <= numY - 2; ++cj) {
           for (int ck = 1; ck <= numZ - 2; ++ck) {
-            if (!filled[index(ci, cj, ck)])
-              continue;
+            if (!filled[index(ci, cj, ck)]) continue;
             for (int vj = cj - 1; vj <= cj; ++vj) {
-              if (vj < 0 || vj > numY - 2)
-                continue;
+              if (vj < 0 || vj > numY - 2) continue;
               int vidx = index(ci, vj, ck);
               if (!seenV[vidx]) {
                 seenV[vidx] = 1;
@@ -317,15 +289,11 @@ struct Fluid {
           int ni = ci + di[m];
           int nj = cj + dj[m];
           int nk = ck + dk[m];
-          if (ni < 1 || ni > numX - 2)
-            continue;
-          if (nj < 0 || nj > numY - 2)
-            continue;
-          if (nk < 1 || nk > numZ - 2)
-            continue;
+          if (ni < 1 || ni > numX - 2) continue;
+          if (nj < 0 || nj > numY - 2) continue;
+          if (nk < 1 || nk > numZ - 2) continue;
           int nidx = index(ni, nj, nk);
-          if (seenV[nidx])
-            continue;
+          if (seenV[nidx]) continue;
           extendedv[nidx] = extendedv[cur];
           seenV[nidx] = 1;
           qv.push(nidx);
@@ -342,11 +310,9 @@ struct Fluid {
       for (int ci = 1; ci <= numX - 2; ++ci) {
         for (int cj = 1; cj <= numY - 2; ++cj) {
           for (int ck = 1; ck <= numZ - 2; ++ck) {
-            if (!filled[index(ci, cj, ck)])
-              continue;
+            if (!filled[index(ci, cj, ck)]) continue;
             for (int wk = ck - 1; wk <= ck; ++wk) {
-              if (wk < 0 || wk > numZ - 2)
-                continue;
+              if (wk < 0 || wk > numZ - 2) continue;
               int widx = index(ci, cj, wk);
               if (!seenW[widx]) {
                 seenW[widx] = 1;
@@ -372,15 +338,11 @@ struct Fluid {
           int ni = ci + di[m];
           int nj = cj + dj[m];
           int nk = ck + dk[m];
-          if (ni < 1 || ni > numX - 2)
-            continue;
-          if (nj < 1 || nj > numY - 2)
-            continue;
-          if (nk < 0 || nk > numZ - 2)
-            continue;
+          if (ni < 1 || ni > numX - 2) continue;
+          if (nj < 1 || nj > numY - 2) continue;
+          if (nk < 0 || nk > numZ - 2) continue;
           int nidx = index(ni, nj, nk);
-          if (seenW[nidx])
-            continue;
+          if (seenW[nidx]) continue;
           extendedw[nidx] = extendedw[cur];
           seenW[nidx] = 1;
           qw.push(nidx);
@@ -415,7 +377,10 @@ struct Fluid {
     int k = std::max(1, std::min(closest_to_z, numZ - 2));
     return {i, j, k};
   }
-  std::vector<float> marker_particle_position_step(float x, float y, float z, float dt){//原来的position_after_dt(float x, float y, float z, float dt) {
+  std::vector<float> marker_particle_position_step(
+      float x, float y, float z,
+      float dt) {  // 原来的position_after_dt(float x, float y, float z, float
+                   // dt) {
     float x_, y_, z_;
     std::vector<float> val = speed_at(x, y, z);
     x_ = x + val[0] * dt;
@@ -428,10 +393,10 @@ struct Fluid {
     return res;
   }
   // std::vector<float> position_after_dt(float x, float y, float z, float dt) {
-  //   // 使用RK2积分
-  //   std::vector<float> mid_pos = marker_particle_position_step(x, y, z, dt * 0.5f);
-  //   std::vector<float> end_pos =
-  //       marker_particle_position_step(mid_pos[0], mid_pos[1], mid_pos[2], dt);
+  //   std::vector<float> mid_pos = marker_particle_position_step(x, y, z, dt *
+  //   0.5f); std::vector<float> end_pos =
+  //       marker_particle_position_step(mid_pos[0], mid_pos[1], mid_pos[2],
+  //       dt);
   //   return end_pos;
   // }
   bool push_backwards(float &x, float &y, float &z) {
@@ -478,53 +443,25 @@ struct Fluid {
         z_pos[idx] = tmp3;
       }
     }
-    //std::cout<<x_pos[584884]<<" "<<y_pos[584884]<<" "<<z_pos[584884]<<"\n";
+    // std::cout<<x_pos[584884]<<" "<<y_pos[584884]<<" "<<z_pos[584884]<<"\n";
     return;
   }
 
   void check_filled(bool need_print) {
-    old_filled=filled;
-    for (int i = 0; i < numCells; i++)
-      statistic[i] = 0;
+    old_filled = filled;
+    for (int i = 0; i < numCells; i++) statistic[i] = 0;
     for (size_t idx = 0; idx < x_pos.size(); idx++) {
       std::vector<int> pos = getCellIndices(x_pos[idx], y_pos[idx], z_pos[idx]);
-      statistic[index(pos[0], pos[1], pos[2])]=idx+1;
+      statistic[index(pos[0], pos[1], pos[2])] = idx + 1;
     }
     for (int k = numZ - 2; k >= 1; --k) {
-      if (need_print)
-        std::cout << "slice k=" << k << std::endl;
+      if (need_print) std::cout << "slice k=" << k << std::endl;
       for (int j = numY - 2; j >= 1; --j) {
         for (int i = 1; i <= numX - 2; ++i) {
-          if (need_print)
-            std::cout << statistic[index(i, j, k)] << " ";
-          // if(danger[index(i,j,k)]){
-          //     std::cout<<i<<" "<<j<<" "<<k<<" "<<filled[index(i,j,k)]<<"\n";
-          // }
+          if (need_print) std::cout << statistic[index(i, j, k)] << " ";
           filled[index(i, j, k)] = (statistic[index(i, j, k)] >= 1);
-          // if(danger[index(i,j,k)]){
-          //     std::cout<<"--->"<<i<<" "<<j<<" "<<k<<" "<<statistic[index(i, j, k)]<<"\n";
-          //     std::cout<<x_pos[statistic[index(i, j, k)]-1]<<" "
-          //              <<y_pos[statistic[index(i, j, k)]-1]<<" "
-          //              <<z_pos[statistic[index(i, j, k)]-1]<<"\n";
-          // }
-
-          // if(j>=48 && j<=48 && i>=25 && i<=25 && k>=25 && k<=25){
-          //     std::cout<<"--->"<<i<<" "<<j<<" "<<k<<" "<<statistic[index(i, j, k)]<<"\n";
-          //     std::cout<<x_pos[statistic[index(i, j, k)]-1]<<" "
-          //              <<y_pos[statistic[index(i, j, k)]-1]<<" "
-          //              <<z_pos[statistic[index(i, j, k)]-1]<<"\n";
-          // }
-
-          
-          // if(old_filled[index(i,j,k)]==false && filled[index(i,j,k)]==true){
-          //   std::cout<<"Cell ("<<i<<","<<j<<","<<k<<") changed from empty to filled.\n";
-          // }
-          // if(old_filled[index(i,j,k)]==true && filled[index(i,j,k)]==false){
-          //   std::cout<<"Cell ("<<i<<","<<j<<","<<k<<") changed from filled to empty.\n";
-          // }
         }
-        if (need_print)
-          std::cout << std::endl;
+        if (need_print) std::cout << std::endl;
       }
     }
 
@@ -547,17 +484,17 @@ struct Fluid {
 
   //////////////////////////////////////////////////////////////////////////////////
   // 必须有numX=numY=numZ
-  int find_index_2(int i, int j, int k) { // 用于J的传入，传入J时就把格式弄好
+  int find_index_2(int i, int j, int k) {  // 用于J的传入，传入J时就把格式弄好
     return (i - 1) * (numX - 2) * (numX - 2) + (j - 1) * (numX - 2) + k - 1;
   }
   void Project(bool need_print, float dx, float dy, float dz, float dt) {
     pressure_solver P;
     std::vector<double> p_sol;
-    int gridtype[234][234][234]; // 1表示正常，2表示固体，0表示空气
-    float J[10][12345678];
+    int gridtype[345][345][345];  // 1表示正常，2表示固体，0表示空气
+    float J[10][23455678];
     // initialize J to zero to avoid using uninitialized garbage values
-    std::fill(&J[0][0], &J[0][0] + 10 * 12345678, 0.0f);
-    float rc_x, rc_y, rc_z; // rigid_center
+    std::fill(&J[0][0], &J[0][0] + 10 * 23455678, 0.0f);
+    float rc_x, rc_y, rc_z;  // rigid_center
     float rigid_v[10] = {0.0f};
 
     // if an external rigid body is attached, sync its state into local
@@ -589,7 +526,7 @@ struct Fluid {
       rigid_m[6] = static_cast<float>(I(2, 2));
     }
 
-    float fc_x, fc_y, fc_z; // face_center
+    float fc_x, fc_y, fc_z;  // face_center
     int d_n_dim = (numX - 2) * (numY - 2) * (numZ - 2);
     std::vector<double> d((numX - 2) * (numY - 2) * (numZ - 2), 0.0);
     // 我们先计算\nabla \cdot (u,v)
@@ -604,7 +541,7 @@ struct Fluid {
           float du_dx = (u[index(i, j, k)] - u[index(i - 1, j, k)]) / (h);
           float dv_dy = (v[index(i, j, k)] - v[index(i, j - 1, k)]) / (h);
           float dw_dz = (w[index(i, j, k)] - w[index(i, j, k - 1)]) / (h);
-          divergence[idx] = du_dx + dv_dy + dw_dz; // 右手边的式子
+          divergence[idx] = du_dx + dv_dy + dw_dz;  // 右手边的式子
         }
       }
     }
@@ -613,8 +550,8 @@ struct Fluid {
     for (int j = 1; j < numY - 1; j++) {
       for (int i = 1; i < numX - 1; i++) {
         for (int k = 1; k < numZ - 1; k++) {
-          int idx = find_index_2(i, j, k);      //(i-1)+(j-1)*(numX-2);
-          d[idx] = -divergence[index(i, j, k)]; // 注意有个负号！
+          int idx = find_index_2(i, j, k);       //(i-1)+(j-1)*(numX-2);
+          d[idx] = -divergence[index(i, j, k)];  // 注意有个负号！
         }
       }
     }
@@ -622,11 +559,11 @@ struct Fluid {
     // 求出J的过程
     for (int i = 1; i <= numX - 3; i++)
       for (int j = 1; j <= numY - 2; j++)
-        for (int k = 1; k <= numZ - 2; k++) // 右边的那个格子是刚体
+        for (int k = 1; k <= numZ - 2; k++)  // 右边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i + 1, j, k)] == true) {
-            int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h;
             fc_z = k * h;
             fc_x = i * h + 0.5 * h;
@@ -640,11 +577,11 @@ struct Fluid {
           }
     for (int i = 2; i <= numX - 2; i++)
       for (int j = 1; j <= numY - 2; j++)
-        for (int k = 1; k <= numZ - 2; k++) // 左边的那个格子是刚体
+        for (int k = 1; k <= numZ - 2; k++)  // 左边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i - 1, j, k)] == true) {
-            int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h;
             fc_z = k * h;
             fc_x = i * h - 0.5 * h;
@@ -654,11 +591,11 @@ struct Fluid {
           }
     for (int i = 1; i <= numX - 2; i++)
       for (int j = 1; j <= numY - 3; j++)
-        for (int k = 1; k <= numZ - 2; k++) // 右边的那个格子是刚体
+        for (int k = 1; k <= numZ - 2; k++)  // 右边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i, j + 1, k)] == true) {
-            int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h + 0.5 * h;
             fc_z = k * h;
             fc_x = i * h;
@@ -668,11 +605,11 @@ struct Fluid {
           }
     for (int i = 1; i <= numX - 2; i++)
       for (int j = 2; j <= numY - 2; j++)
-        for (int k = 1; k <= numZ - 2; k++) // 右边的那个格子是刚体
+        for (int k = 1; k <= numZ - 2; k++)  // 右边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i, j - 1, k)] == true) {
-            int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h - 0.5 * h;
             fc_z = k * h;
             fc_x = i * h;
@@ -682,11 +619,11 @@ struct Fluid {
           }
     for (int i = 1; i <= numX - 2; i++)
       for (int j = 1; j <= numY - 2; j++)
-        for (int k = 1; k <= numZ - 3; k++) // 右边的那个格子是刚体
+        for (int k = 1; k <= numZ - 3; k++)  // 右边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i, j, k + 1)] == true) {
-                int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h;
             fc_z = k * h + 0.5 * h;
             fc_x = i * h;
@@ -695,12 +632,12 @@ struct Fluid {
             J[5][j_index] += h * h * (fc_x - rc_x);
           }
     for (int i = 1; i <= numX - 2; i++)
-      for (int j = 1; j <= numY - 2; j++)//49.7713
-        for (int k = 2; k <= numZ - 2; k++) // 右边的那个格子是刚体
+      for (int j = 1; j <= numY - 2; j++)    // 49.7713
+        for (int k = 2; k <= numZ - 2; k++)  // 右边的那个格子是刚体
           if (is_rigid_body[index(i, j, k)] == false &&
               filled[index(i, j, k)] == true &&
               is_rigid_body[index(i, j, k - 1)] == true) {
-            int j_index= find_index_2(i, j, k);
+            int j_index = find_index_2(i, j, k);
             fc_y = j * h;
             fc_z = k * h - 0.5 * h;
             fc_x = i * h;
@@ -709,8 +646,8 @@ struct Fluid {
             J[5][j_index] -= h * h * (fc_x - rc_x);
           }
     // 把J的每一项都乘以0.5
-    for (size_t i = 1; i <= 6; ++i) {        // Iterate over rows of J
-      for (size_t j = 0; j < d_n_dim; ++j) { // Iterate over columns of J
+    for (size_t i = 1; i <= 6; ++i) {         // Iterate over rows of J
+      for (size_t j = 0; j < d_n_dim; ++j) {  // Iterate over columns of J
         J[i][j] *= -0.5f;
       }
     }
@@ -720,8 +657,8 @@ struct Fluid {
 
     // 散度d还需要减去density*J^T*V_rigid，最终我们得到的【散度】是实际散度-\rho
     // J^T V
-    for (size_t i = 1; i <= 6; ++i) {        // Iterate over rows of J
-      for (size_t j = 0; j < d_n_dim; ++j) { // Iterate over columns of J
+    for (size_t i = 1; i <= 6; ++i) {         // Iterate over rows of J
+      for (size_t j = 0; j < d_n_dim; ++j) {  // Iterate over columns of J
         d[j] -= density * J[i][j] * rigid_v[i];
       }
     }
@@ -736,9 +673,10 @@ struct Fluid {
       for (int j = 1; j <= numY - 2; j++)
         for (int k = 1; k <= numZ - 2; k++) {
           if (is_container[index(i, j, k)])
-            gridtype[i][j][k] = 2;
+            gridtype[i][j][k] = 2;  // 如果是固体或者容器壁就是2
           else
-            gridtype[i][j][k] = filled[index(i, j, k)];
+            gridtype[i][j][k] =
+                filled[index(i, j, k)];  // 如果是空气就是0，液体就是1
         }
 
     double constant_B;
@@ -754,46 +692,48 @@ struct Fluid {
     // and apply it
     if (m_rigid) {
       float impulse[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-      for (int i = 1; i <= 6; ++i) { // 第i行的值
+      for (int i = 1; i <= 6; ++i) {  // 第i行的值
         double acc = 0.0;
         for (int j = 0; j < d_n_dim; ++j) {
           double delta_acc = static_cast<double>(J[i][j]) * p_sol[j] * density *
                              dx * dx * dx / dt;
-          acc += delta_acc; // 所谓的p_sol还不是真实的p
+          acc += delta_acc;  // 所谓的p_sol还不是真实的p
           // if(i==2 && J[i][j]!=0) std::cout<<J[i][j]<<"*"<<p_sol[j] * density
           // * dx * dx * dx / dt<<"="<<delta_acc<<"\n";
         }
-        impulse[i - 1] = static_cast<float>(acc) * 2; // 这里乘了一个2
+        impulse[i - 1] = static_cast<float>(acc) * 2;  // 这里乘了一个2
       }
       // 上面的是Jp，是力
       // 把重力也作为冲量加到impulse[1]上
       std::cout << "Original Force Jp=" << impulse[1]
-                << "\n"; // 流体对刚体的作用力的y分量
-      impulse[1] += m_rigid->mass() * -8.0;//这个也是力
+                << "\n";  // 流体对刚体的作用力的y分量
+      impulse[1] += m_rigid->mass() * -8.0;  // 这个也是力
 
       std::cout << "Gravity Added: " << m_rigid->mass() * -8.0 << "\n";
       std::cout << impulse[0] << " " << impulse[1] << " " << impulse[2] << " "
                 << impulse[3] << " " << impulse[4] << " " << impulse[5] << "\n";
-        change3d::Vec3 rigidPosBeforeUpdate = m_rigid->position();
-        std::cout << "Rigid Body Position Before Update: ("
-            << rigidPosBeforeUpdate.x << ", " << rigidPosBeforeUpdate.y
-            << ", " << rigidPosBeforeUpdate.z << ")\n";
-        // 输出刚体当前旋转（以 Roll, Pitch, Yaw 角表示，单位为度）
-        {
+      change3d::Vec3 rigidPosBeforeUpdate = m_rigid->position();
+      std::cout << "Rigid Body Position Before Update: ("
+                << rigidPosBeforeUpdate.x << ", " << rigidPosBeforeUpdate.y
+                << ", " << rigidPosBeforeUpdate.z << ")\n";
+      // 输出刚体当前旋转（以 Roll, Pitch, Yaw 角表示，单位为度）
+      {
         auto q = m_rigid->orientation();
         double ww = q.w, xx = q.x, yy = q.y, zz = q.z;
-        double roll = std::atan2(2.0 * (ww * xx + yy * zz), 1.0 - 2.0 * (xx * xx + yy * yy));
-        double pitch = std::asin(std::max(-1.0, std::min(1.0, 2.0 * (ww * yy - zz * xx))));
-        double yaw = std::atan2(2.0 * (ww * zz + xx * yy), 1.0 - 2.0 * (yy * yy + zz * zz));
+        double roll = std::atan2(2.0 * (ww * xx + yy * zz),
+                                 1.0 - 2.0 * (xx * xx + yy * yy));
+        double pitch =
+            std::asin(std::max(-1.0, std::min(1.0, 2.0 * (ww * yy - zz * xx))));
+        double yaw = std::atan2(2.0 * (ww * zz + xx * yy),
+                                1.0 - 2.0 * (yy * yy + zz * zz));
         double deg = 180.0 / std::acos(-1.0);
         std::cout << "Rigid Body Orientation (deg) Roll,Pitch,Yaw: "
-              << roll * deg << ", " << pitch * deg << ", " << yaw * deg << "\n";
-        }
-        m_rigid->update(
-          impulse,
-          dt); // 更新刚体！！！！！！！！！！
+                  << roll * deg << ", " << pitch * deg << ", " << yaw * deg
+                  << "\n";
+      }
+      m_rigid->update(impulse,
+                      dt);  // 更新刚体！！！！！！！！！！
 
-          
       change3d::Vec3 rigidPosAfterUpdate = m_rigid->position();
       std::cout << "Rigid Body Position After Update: ("
                 << rigidPosAfterUpdate.x << ", " << rigidPosAfterUpdate.y
@@ -802,34 +742,28 @@ struct Fluid {
       std::cout << "Rigid Body Linear Velocity After Update: ("
                 << rigidVelAfterUpdate.x << ", " << rigidVelAfterUpdate.y
                 << ", " << rigidVelAfterUpdate.z << ")\n";
-    }//end if
+    }  // end if
 
-    for (int i = 0; i < numCells; i++)
-      p[i] = 0.0f;
+    for (int i = 0; i < numCells; i++) p[i] = 0.0f;
 
     for (int i = 1; i < numX - 1; i++) {
       for (int j = 1; j < numY - 1; j++) {
         for (int k = 1; k < numZ - 1; k++) {
           int idx = (i - 1) * (numZ - 2) * (numY - 2) + (j - 1) * (numZ - 2) +
-                    k - 1; //(i-1)+(j-1)*(numX-2);
+                    k - 1;  //(i-1)+(j-1)*(numX-2);
           p[index(i, j, k)] = p_sol[idx] * density * dx * dx * dx /
-                              dt; // density=1.0f×1×1×1/0.1
-        } // 答案需要乘以\rho*dx^3 / dt
+                              dt;  // density=1.0f×1×1×1/0.1
+        }  // 答案需要乘以\rho*dx^3 / dt
       }
     }
-    // for(int y=1;y<=numY-2;y++){
-    //     std::cout<<"y="<<y<<" ";
-    //     std::cout<<p[index(5,y,5)]<<" "<<p[index(5,y,6)]<<"
-    //     "<<p[index(5,y,7)]<<" "<<p[index(5,y,8)]<<"\n";
-    // }
 
     // Subtract gradient of pressure from velocity field
     for (int k = 1; k <= numZ - 2; k++)
       for (int j = 1; j <= numY - 2; j++)
         for (int i = 1; i <= numX - 3; i++) {
-          u[index(i, j, k)] -=
-              (dt / density / h) * (p[index(i + 1, j, k)] -
-                                    p[index(i, j, k)]); // 多除了一个h，警钟长鸣
+          u[index(i, j, k)] -= (dt / density / h) *
+                               (p[index(i + 1, j, k)] -
+                                p[index(i, j, k)]);  // 多除了一个h，警钟长鸣
         }
     for (int k = 1; k <= numZ - 2; k++)
       for (int j = 1; j <= numY - 3; j++)
@@ -896,18 +830,12 @@ struct Fluid {
   // so existing 2-arg calls remain valid (they sample the middle-ish slice).
   float sampleU_e(float i, float j, float k = 1.0f) {
     // u ∈[0,numX-2] * [1,numY-2] * [1,numZ-2]
-    if (i < 0.0f)
-      i = 0.0f;
-    if (i > numX - 2.0f)
-      i = numX - 2.0f;
-    if (j < 1.0f)
-      j = 1.0f;
-    if (j > numY - 2.0f)
-      j = numY - 2.0f;
-    if (k < 1.0f)
-      k = 1.0f;
-    if (k > numZ - 2.0f)
-      k = numZ - 2.0f;
+    if (i < 0.0f) i = 0.0f;
+    if (i > numX - 2.0f) i = numX - 2.0f;
+    if (j < 1.0f) j = 1.0f;
+    if (j > numY - 2.0f) j = numY - 2.0f;
+    if (k < 1.0f) k = 1.0f;
+    if (k > numZ - 2.0f) k = numZ - 2.0f;
 
     float i_r = i - std::floor(i);
     float j_r = j - std::floor(j);
@@ -945,18 +873,12 @@ struct Fluid {
 
   float sampleW_e(float i, float j, float k = 1.0f) {
     // w ∈[1,numX-2] * [1,numY-2] * [0,numZ-2]
-    if (i < 1.0f)
-      i = 1.0f;
-    if (i > numX - 2.0f)
-      i = numX - 2.0f;
-    if (j < 1.0f)
-      j = 1.0f;
-    if (j > numY - 2.0f)
-      j = numY - 2.0f;
-    if (k < 0.0f)
-      k = 0.0f;
-    if (k > numZ - 2.0f)
-      k = numZ - 2.0f;
+    if (i < 1.0f) i = 1.0f;
+    if (i > numX - 2.0f) i = numX - 2.0f;
+    if (j < 1.0f) j = 1.0f;
+    if (j > numY - 2.0f) j = numY - 2.0f;
+    if (k < 0.0f) k = 0.0f;
+    if (k > numZ - 2.0f) k = numZ - 2.0f;
 
     float i_r = i - std::floor(i);
     float j_r = j - std::floor(j);
@@ -994,18 +916,12 @@ struct Fluid {
 
   float sampleV_e(float i, float j, float k = 1.0f) {
     // v ∈[1,numX-2] * [0,numY-2] * [1,numZ-2]
-    if (j < 0.0f)
-      j = 0.0f;
-    if (j > numY - 2.0f)
-      j = numY - 2.0f;
-    if (i < 1.0f)
-      i = 1.0f;
-    if (i > numX - 2.0f)
-      i = numX - 2.0f;
-    if (k < 1.0f)
-      k = 1.0f;
-    if (k > numZ - 2.0f)
-      k = numZ - 2.0f;
+    if (j < 0.0f) j = 0.0f;
+    if (j > numY - 2.0f) j = numY - 2.0f;
+    if (i < 1.0f) i = 1.0f;
+    if (i > numX - 2.0f) i = numX - 2.0f;
+    if (k < 1.0f) k = 1.0f;
+    if (k > numZ - 2.0f) k = numZ - 2.0f;
 
     float i_r = i - std::floor(i);
     float j_r = j - std::floor(j);
@@ -1073,7 +989,7 @@ struct Fluid {
     for (int i = 1; i <= numX - 2; i++) {
       for (int j = 1; j <= numY - 2; j++) {
         for (int k = 1; k <= numZ - 2; k++) {
-          float cx, cy, cz; // center
+          float cx, cy, cz;  // center
           cx = i * h, cy = j * h, cz = k * h;
           if (m_rigid) {
             // auto pos = m_rigid->position();
@@ -1092,30 +1008,10 @@ struct Fluid {
         }
       }
     }
-    // for(int i=1;i<=numX-2;i++){
-    //     for(int j=1;j<=numY-2;j++){
-    //         for(int k=1;k<=numZ-2;k++){
-    //           if(m_rigid){
-    //             auto pos = m_rigid->position();
-    //             float rc_x = static_cast<float>(pos.x);
-    //             float rc_y = static_cast<float>(pos.y);
-    //             float rc_z = static_cast<float>(pos.z);
-    //             float half_size = 2.14*h;//一个非常小的立方体
-    //             float cx, cy, cz;//center
-    //             cx=i*h, cy=j*h, cz=k*h;
-    //             if (cx >= rc_x - half_size && cx <= rc_x + half_size &&
-    //                 cy >= rc_y - half_size && cy <= rc_y + half_size &&
-    //                 cz >= rc_z - half_size && cz <= rc_z + half_size) {
-    //               is_rigid_body[index(i, j, k)] = true;
-    //             } else {
-    //               is_rigid_body[index(i, j, k)] = false;
-    //             }
-    //         }
-    //     }
-    // }
-    // }
+    
   }
-  void force_zero(bool need_print) { // 把固体内部的速度都设为0，边界上的不设为0
+  void force_zero(
+      bool need_print) {  // 把固体内部的速度都设为0，边界上的不设为0
     // u:内部的是[1,numX-3]*[1,numY-2]*[1,numZ-2]，边界上的是i=0和i=numX-2
     // 第一个格子对应的u是i=0和i=1的
     for (int j = 1; j <= numY - 2; j++) {
@@ -1233,7 +1129,7 @@ struct Fluid {
     v.swap(newV);
     w.swap(newW);
   }
-  void print_highest_fluid_block(){
+  void print_highest_fluid_block() {
     // Find the highest j (y-index) that contains any fluid cell and print
     int highest_j = -1;
     for (int j = numY - 2; j >= 1; --j) {
@@ -1254,7 +1150,7 @@ struct Fluid {
     if (highest_j == -1) {
       std::cout << "No fluid cells found\n";
     } else {
-      float height = highest_j * h; // cell center y-coordinate
+      float height = highest_j * h;  // cell center y-coordinate
       std::cout << "Highest fluid block at y = " << height
                 << " (grid j=" << highest_j << ")\n";
     }

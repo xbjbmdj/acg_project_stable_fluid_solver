@@ -16,7 +16,7 @@ bool gpu_amult_init(int n_dim,
     const float* Adiagminusj,
     const float* Adiagminusk,
     const float* J,           // pointer to J[0][0]
-    std::size_t J_stride,     // elements per row in J (e.g., 12345678)
+    std::size_t J_stride,     // elements per row in J (e.g., 22345678)
     const double* scaleBase,  // length >= num_modes
     int num_modes = 6);
 
