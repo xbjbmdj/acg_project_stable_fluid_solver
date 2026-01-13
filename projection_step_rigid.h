@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <array>
+#include "gpu_amult.h"
 
 // 可选 OpenMP 加速宏，编译时可定义为 0 以禁用
 #ifndef CG_USE_OPENMP
@@ -36,8 +37,8 @@ public:
     static bool solve(std::function<void(const std::vector<double>&, std::vector<double>&)> A_mult,
                      const std::vector<double>& d,
                      std::vector<double>& p,
-                     double tol = 2e-5,
-                     int max_iter = 1000,
+                     double tol = 1e-6,
+                     int max_iter = 2000,
                      const std::vector<double>* p0 = nullptr) {
 
         int n = (int)d.size();
@@ -195,7 +196,7 @@ class pressure_solver{
                 scaleBase[m] = constant_B * (1.0 / rigid_m[m]);
             }
 
-            auto A_mult = [&rigid_m, &scaleBase, &J, &Adiag, &Adiagminusi, &Adiagminusj, &Adiagplusi, &Adiagplusj, &Adiagplusk, &Adiagminusk, n_dim](const std::vector<double>& x, std::vector<double>& result) {
+            auto cpu_A_mult = [&rigid_m, &scaleBase, &J, &Adiag, &Adiagminusi, &Adiagminusj, &Adiagplusi, &Adiagplusj, &Adiagplusk, &Adiagminusk, n_dim](const std::vector<double>& x, std::vector<double>& result) {
                 const size_t total = (size_t)n_dim * n_dim * n_dim;
                 //result.resize(total);
 
@@ -262,8 +263,37 @@ class pressure_solver{
                     result[t] += acc;
                 }
             };
+            
+            
+            
+            
+            
+            
+            
+            
+            std::array<double,6> scaleBase_gpu{};
+            for (int m = 0; m < num_modes; ++m) scaleBase_gpu[m] = scaleBase[m + 1];
+            const std::size_t J_stride = 12345678; // matches declared J row length
+            const float* J_ptr = &J[1][0];
 
-			bool success = ConjugateGradientSolver::solve(A_mult, d, p);
+            bool use_gpu = gpu_amult_init(
+                n_dim,
+                Adiag.data(), Adiagplusi.data(), Adiagplusj.data(), Adiagplusk.data(),
+                Adiagminusi.data(), Adiagminusj.data(), Adiagminusk.data(),
+                J_ptr, J_stride,
+                scaleBase_gpu.data(),
+                num_modes);
+
+            bool success = false;
+            if (use_gpu) {
+                success = gpu_cg_solve(d, p);
+                std::cout<<"used gpu\n";
+            } else {
+                std::cout << "gpu_amult_init failed, fallback to CPU" << std::endl;
+                success = ConjugateGradientSolver::solve(cpu_A_mult, d, p);
+            }
+
+            if (use_gpu) gpu_amult_destroy();
 
             if(print){
                 std::cout<<"Not Implemented\n";

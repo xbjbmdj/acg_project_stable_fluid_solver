@@ -14,6 +14,15 @@
 
 // 100*100*100每个时间步大约16秒（40个时间步总计用时9分41秒）
 // 输入100 51 用时2分26秒77
+
+// 修复代码中Container的错误，15分钟
+
+// 12.28更改Writeobj为立方体，17/15
+// 要不要改成矩阵，17/15分钟
+
+// 1.13处理刚体碰撞，50/30分钟
+
+
 //  Simple OBJ exporter: write a face on the interface where two adjacent voxels
 //  have different `filled` states. This is intentionally minimal: each face
 //  emits four vertices (no deduplication) and one quad face.
@@ -223,21 +232,33 @@ void writeOBJFromFluid(const Fluid &f, const std::string &filename,
 
   if (f.m_rigid) {
     auto pos = f.m_rigid->position();
-    double cx = pos.x;
-    double cy = pos.y;
-    double cz = pos.z;
-    double radius = 9.4 * voxelSize; // world units (scale by voxelSize)
-    // sectors x stacks -> triangles = 2 * sectors * stacks
-    out << "g ball\n";
-    out << "usemtl Ball\n";
-    appendSphere(out, vid, cx, cy, cz, radius, 48, 24);
+    auto ori = f.m_rigid->orientation();
+    change3d::Mat3 R = ori.toMat3();
+    const auto &bunny = change3d::getBunnyMesh();
+    if (!bunny.loaded || bunny.verts.empty() || bunny.tris.empty()) {
+      std::cerr << "Warning: bunny_200.obj not loaded; skipping rigid body export" << std::endl;
+    } else {
+      out << "g ball\n";
+      out << "usemtl Ball\n";
+      size_t start = vid;
+      // write transformed vertices
+      for (const auto &v : bunny.verts) {
+        change3d::Vec3 w = R.mulVec(v) + pos; // centroid already baked into mesh
+        out << "v " << w.x << " " << w.y << " " << w.z << "\n";
+        ++vid;
+      }
+      // write faces using the transformed vertices
+      for (const auto &tri : bunny.tris) {
+        out << "f " << start + tri[0] << " " << start + tri[1] << " " << start + tri[2] << "\n";
+      }
+    }
   }
 
   // 在OBJ末尾添加一个与轴平行的长方体，两个对角为 (75,0,75) 和 (100,25,100)
   // 六个面使用材料 GreenBox（应在 MTL 中定义）
   {
-    double minx = 75.0, miny = 0.0, minz = 75.0;
-    double maxx = 100.0, maxy = 25.0, maxz = 100.0;
+    double minx = 80.0, miny = 0.0, minz = 80.0;
+    double maxx = 120.0, maxy = 40.0, maxz = 120.0;
     out << "g AddedBox\n";
     out << "usemtl GreenBox\n";
     // vertices
@@ -255,7 +276,7 @@ void writeOBJFromFluid(const Fluid &f, const std::string &filename,
     out << "f " << vid << " " << vid + 1 << " " << vid + 2 << " " << vid + 3 << "\n"; // top (z=max)
     vid += 4;
     // side faces
-    out << "f " << (vid - 8) << " " << (vid - 4) << " " << (vid - 1) << " " << (vid - 7) << "\n";
+    out << "f " << (vid - 8) << " " << (vid - 4) << " " << (vid - 1) << " " << (vid - 5) << "\n";
     out << "f " << (vid - 7) << " " << (vid - 3) << " " << (vid - 2) << " " << (vid - 6) << "\n";
     out << "f " << (vid - 8) << " " << (vid - 7) << " " << (vid - 3) << " " << (vid - 4) << "\n";
     out << "f " << (vid - 6) << " " << (vid - 2) << " " << (vid - 1) << " " << (vid - 5) << "\n";
@@ -277,13 +298,13 @@ int main() {
   // Initialize RigidBody
   change3d::RigidBody rigidBody;
   rigidBody.setMass(
-      1000.0); // Example mass，如果mass=27，体积=27m^3，则密度和水完全一样
+      3200.0); // Example mass，如果mass=27，体积=27m^3，则密度和水完全一样
               // set body-space inertia for a 3m cube mass=10kg: I ~ 15 kg·m^2
               // on diag  如果半径为9.4，体积大约为4000
-  change3d::Mat3 Ibody(12000.0);
+  change3d::Mat3 Ibody(120000.0);//默认质量1000对应40000
   rigidBody.setInertiaBody(Ibody);
   rigidBody.setPosition(change3d::Vec3(
-      25.0, 38.00, 25.0)); // Example initial position of the center
+      30.0, 75.00, 30.0)); // Example initial position of the center
   rigidBody.setLinearVelocity(
       change3d::Vec3(0.0, 0.0, 0.0)); // Example velocity
 
@@ -301,8 +322,8 @@ int main() {
         }
       }
     }
-    for (int i = 1; i <= 60; i++) {
-      for (int j = 1; j <= 50; j++) {
+    for (int i = 1; i <= 60; i++) {// 60, 50, 60
+      for (int j = 1; j <= 90; j++) {
         for (int k = 1; k <= 60; k++) {
           F.filled[F.index(i, j, k)] = true;
         }
@@ -313,9 +334,9 @@ int main() {
         for (int k = 1; k <= F.numZ - 2; k++) {
           F.is_container[F.index(i, j, k)] = false;
         }
-    for(int i=75;i<=F.numX - 2;i++)
-    for(int j=1;j<=25;j++)
-    for(int k=75;k<=F.numZ - 2;k++){
+    for(int i=80;i<=F.numX - 2;i++)
+    for(int j=1;j<=40;j++)
+    for(int k=80;k<=F.numZ - 2;k++){
         F.is_container[F.index(i, j, k)] = true;
     }
     for (int i = 0; i < F.numX; ++i)
@@ -336,8 +357,15 @@ int main() {
     f.integrate(dt, 0.0, -8.0, 0.0);
 
     f.calculate_extended_velocity();
+    //输出精确到纳秒的时间
+    auto now = std::chrono::high_resolution_clock::now();
+    std::cout << "Current time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
+
     f.advect(dt);
     f.force_zero(0);
+
+    now = std::chrono::high_resolution_clock::now();
+    std::cout << "0Advect time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
     // std::cout << "Step " << step << ": Information before projection" <<
     // std::endl;
     //     for(int i=4;i<=6;i++)
@@ -349,17 +377,20 @@ int main() {
     //         }
 
     // 统计有多少个格子被刚体占据并输出
-    int rigid_occupied_count = 0;
-    for (int i = 1; i <= f.numX - 2; i++)
-      for (int j = 1; j <= f.numY - 2; j++)
-        for (int k = 1; k <= f.numZ - 2; k++) {
-          int c = f.index(i, j, k);
-          if (f.is_rigid_body[c]) {
-            rigid_occupied_count++;
-          }
-        }
-    std::cout << "Rigid body occupies " << rigid_occupied_count << " cells.\n";
+    // int rigid_occupied_count = 0;
+    // for (int i = 1; i <= f.numX - 2; i++)
+    //   for (int j = 1; j <= f.numY - 2; j++)
+    //     for (int k = 1; k <= f.numZ - 2; k++) {
+    //       int c = f.index(i, j, k);
+    //       if (f.is_rigid_body[c]) {
+    //         rigid_occupied_count++;
+    //       }
+    //     }
+    // std::cout << "Rigid body occupies " << rigid_occupied_count << " cells.\n";
     f.Project(0, f.h, f.h, f.h, dt);
+
+    now = std::chrono::high_resolution_clock::now();
+    std::cout << "Project time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
 
     // std::cout << "Step " << step << ": after Project" << std::endl;
     // 已经包含了对于刚体位置的更新
@@ -386,7 +417,7 @@ int main() {
     f.store_is_rigid_body();
     f.calculate_is_rigid_body(); // 计算刚体占据了哪些格子。
     f.treat_rigid_as_container();
-    //f.replace_rigid_body_fluid();
+    f.replace_rigid_body_fluid();
     // 如果一个格子上一步is_rigid_body是true，这一帧却变成false了，说明刚体离开了这个格子，那么需要用流体填充这个格子
 
     // for(int i=4;i<=6;i++)
@@ -394,10 +425,28 @@ int main() {
     //     for(int k=4;k<=6;k++){
     //         std::cout<<"filled["<<i<<","<<j<<","<<k<<"]="<<f.filled[f.index(i,j,k)]<<"\n";
     //     }
+
     f.print_highest_fluid_block();
-    if (step % 5 == 0) {
+
+    //输出哪些高为47的网格是container
+
+    // for (int i = 1; i <= f.numX - 2; i++)
+    //   for (int k = 1; k <= f.numZ - 2; k++) {
+    //     int c = f.index(i, 47, k);
+    //     if (f.is_container[c]) {
+    //       std::cout << "Container at (" << i << ",47," << k << ")\n";
+    //     }
+    //   }
+    //   for (int i = 1; i <= f.numX - 2; i++)
+    //   for (int k = 1; k <= f.numZ - 2; k++) {
+    //     int c = f.index(i, 47, k);
+    //     if (f.is_rigid_body[c]) {
+    //       std::cout << "Rigid body at (" << i << ",47," << k << ")\n";
+    //     }
+    //   }
+    if (step % 5 ==0) {
       std::ostringstream oname;
-      oname << "122702ball100_" << step << ".obj";
+      oname << "011301bunny_120_" << step << ".obj";
       writeOBJFromFluid(f, oname.str(), 1.0);
     }
     // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -405,4 +454,51 @@ int main() {
   return 0;
 }
 // export PATH=$PATH:/snap/bin
+// export PATH=/usr/local/cuda/bin:$PATH
+// export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 // ulimit -s unlimited
+// 渲染主要使用：blender --background --python ds2.py
+// 视频生成主要使用：（在具有很多图片的那个文件夹里面）
+//ffmpeg -framerate 10 -pattern_type glob -i 'ball_*_render.png' -c:v libx264 -pix_fmt yuv420p out.mp4
+
+//mkdir -p build/longrun2 && find build -maxdepth 1 -type f -name '1228ball_*' -exec mv {} build/longrun/ \;
+
+/*
+mkdir -p tmp_seq
+i=1
+for f in $(printf "%s\n" 1229bunny_120_*_render.png | sort -V); do
+  ln -sf "$PWD/$f" tmp_seq/$(printf "img%03d.png" $i)
+  i=$((i+1))
+done
+ffmpeg -framerate 20 -i tmp_seq/img%03d.png -c:v libx264 -pix_fmt yuv420p out_20.mp4
+rm -r tmp_seq
+*/
+/*
+Step 80
+Rigid body occupies 3371 cells.
+CG converged in 189 iterations, residual: 1.78335e-05
+Original Force Jp=8061.79
+Gravity Added: -8000
+-1066.38 61.7905 2727.12 -1994.72 861.336 232.475
+Rigid Body Position Before Update: (34.0267, 7.75577, 33.2608)
+Rigid Body Position After Update: (34.3285, 7.39662, 33.5666)
+Rigid Body Linear Velocity After Update: (3.01742, -3.59145, 3.05842)
+Highest fluid block at y = 91 (grid j=91)
+Wrote OBJ: ball_80.obj (faces: 48171)
+
+*/
+
+
+//运行
+/*
+cd /home/oier/acgpj_change3d/build
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=native ..
+cmake --build . -j
+或者
+
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.6/bin/nvcc ..
+cmake --build . -j
+
+
+*/
+//140是最后一个有效时间步

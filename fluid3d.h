@@ -126,17 +126,17 @@ struct Fluid {
           int c = index(i, j, k);
           // 如果上一步是刚体，这一步不是刚体，那么用流体填充
           if (old_is_rigid_body[c] && !is_rigid_body[c]) {
-            is_container[c] = false;
-            if(old_filled[index(i-1,j,k)] || old_filled[index(i+1,j,k)] ||
-               old_filled[index(i,j-1,k)] || old_filled[index(i,j+1,k)] ||
-               old_filled[index(i,j,k-1)] || old_filled[index(i,j,k+1)]){
-                filled[c] = true;
-                //std::cout<<"Filling cell ("<<i<<","<<j<<","<<k<<") with fluid as rigid body moved away.\n";
-                danger[c]=true;
-              }
-              else{
-                filled[c] = false;
-              }
+            is_container[c] = false; filled[c] = false;
+            // if(old_filled[index(i-1,j,k)] || old_filled[index(i+1,j,k)] ||
+            //    old_filled[index(i,j-1,k)] || old_filled[index(i,j+1,k)] ||
+            //    old_filled[index(i,j,k-1)] || old_filled[index(i,j,k+1)]){
+            //     filled[c] = true;
+            //     //std::cout<<"Filling cell ("<<i<<","<<j<<","<<k<<") with fluid as rigid body moved away.\n";
+            //     danger[c]=true;
+            //   }
+            //   else{
+            //     filled[c] = false;
+            //   }
           }
         }
   }
@@ -478,6 +478,7 @@ struct Fluid {
         z_pos[idx] = tmp3;
       }
     }
+    //std::cout<<x_pos[584884]<<" "<<y_pos[584884]<<" "<<z_pos[584884]<<"\n";
     return;
   }
 
@@ -496,16 +497,25 @@ struct Fluid {
         for (int i = 1; i <= numX - 2; ++i) {
           if (need_print)
             std::cout << statistic[index(i, j, k)] << " ";
-          if(danger[index(i,j,k)]){
-              std::cout<<i<<" "<<j<<" "<<k<<" "<<filled[index(i,j,k)]<<"\n";
-          }
+          // if(danger[index(i,j,k)]){
+          //     std::cout<<i<<" "<<j<<" "<<k<<" "<<filled[index(i,j,k)]<<"\n";
+          // }
           filled[index(i, j, k)] = (statistic[index(i, j, k)] >= 1);
-          if(danger[index(i,j,k)]){
-              std::cout<<"--->"<<i<<" "<<j<<" "<<k<<" "<<statistic[index(i, j, k)]<<"\n";
-              std::cout<<x_pos[statistic[index(i, j, k)]-1]<<" "
-                       <<y_pos[statistic[index(i, j, k)]-1]<<" "
-                       <<z_pos[statistic[index(i, j, k)]-1]<<"\n";
-          }
+          // if(danger[index(i,j,k)]){
+          //     std::cout<<"--->"<<i<<" "<<j<<" "<<k<<" "<<statistic[index(i, j, k)]<<"\n";
+          //     std::cout<<x_pos[statistic[index(i, j, k)]-1]<<" "
+          //              <<y_pos[statistic[index(i, j, k)]-1]<<" "
+          //              <<z_pos[statistic[index(i, j, k)]-1]<<"\n";
+          // }
+
+          // if(j>=48 && j<=48 && i>=25 && i<=25 && k>=25 && k<=25){
+          //     std::cout<<"--->"<<i<<" "<<j<<" "<<k<<" "<<statistic[index(i, j, k)]<<"\n";
+          //     std::cout<<x_pos[statistic[index(i, j, k)]-1]<<" "
+          //              <<y_pos[statistic[index(i, j, k)]-1]<<" "
+          //              <<z_pos[statistic[index(i, j, k)]-1]<<"\n";
+          // }
+
+          
           // if(old_filled[index(i,j,k)]==false && filled[index(i,j,k)]==true){
           //   std::cout<<"Cell ("<<i<<","<<j<<","<<k<<") changed from empty to filled.\n";
           // }
@@ -755,23 +765,35 @@ struct Fluid {
         }
         impulse[i - 1] = static_cast<float>(acc) * 2; // 这里乘了一个2
       }
-      // 上面的是Jp，还不是冲量
+      // 上面的是Jp，是力
       // 把重力也作为冲量加到impulse[1]上
       std::cout << "Original Force Jp=" << impulse[1]
                 << "\n"; // 流体对刚体的作用力的y分量
-      impulse[1] += m_rigid->mass() * -8.0;
+      impulse[1] += m_rigid->mass() * -8.0;//这个也是力
 
       std::cout << "Gravity Added: " << m_rigid->mass() * -8.0 << "\n";
       std::cout << impulse[0] << " " << impulse[1] << " " << impulse[2] << " "
                 << impulse[3] << " " << impulse[4] << " " << impulse[5] << "\n";
-      change3d::Vec3 rigidPosBeforeUpdate = m_rigid->position();
-      std::cout << "Rigid Body Position Before Update: ("
-                << rigidPosBeforeUpdate.x << ", " << rigidPosBeforeUpdate.y
-                << ", " << rigidPosBeforeUpdate.z << ")\n";
-      m_rigid->update(
+        change3d::Vec3 rigidPosBeforeUpdate = m_rigid->position();
+        std::cout << "Rigid Body Position Before Update: ("
+            << rigidPosBeforeUpdate.x << ", " << rigidPosBeforeUpdate.y
+            << ", " << rigidPosBeforeUpdate.z << ")\n";
+        // 输出刚体当前旋转（以 Roll, Pitch, Yaw 角表示，单位为度）
+        {
+        auto q = m_rigid->orientation();
+        double ww = q.w, xx = q.x, yy = q.y, zz = q.z;
+        double roll = std::atan2(2.0 * (ww * xx + yy * zz), 1.0 - 2.0 * (xx * xx + yy * yy));
+        double pitch = std::asin(std::max(-1.0, std::min(1.0, 2.0 * (ww * yy - zz * xx))));
+        double yaw = std::atan2(2.0 * (ww * zz + xx * yy), 1.0 - 2.0 * (yy * yy + zz * zz));
+        double deg = 180.0 / std::acos(-1.0);
+        std::cout << "Rigid Body Orientation (deg) Roll,Pitch,Yaw: "
+              << roll * deg << ", " << pitch * deg << ", " << yaw * deg << "\n";
+        }
+        m_rigid->update(
           impulse,
-          dt); // 把Jp作用在刚体上，作用时间是t。例如说y分量是F_y，那么冲量的y分量是F_y*dt。Δv=F_y
-               // * dt/m. 当 F_y=10, dt=0.1, m=2.0时候，Δv=0.5
+          dt); // 更新刚体！！！！！！！！！！
+
+          
       change3d::Vec3 rigidPosAfterUpdate = m_rigid->position();
       std::cout << "Rigid Body Position After Update: ("
                 << rigidPosAfterUpdate.x << ", " << rigidPosAfterUpdate.y
@@ -780,7 +802,7 @@ struct Fluid {
       std::cout << "Rigid Body Linear Velocity After Update: ("
                 << rigidVelAfterUpdate.x << ", " << rigidVelAfterUpdate.y
                 << ", " << rigidVelAfterUpdate.z << ")\n";
-    }
+    }//end if
 
     for (int i = 0; i < numCells; i++)
       p[i] = 0.0f;
@@ -1054,14 +1076,14 @@ struct Fluid {
           float cx, cy, cz; // center
           cx = i * h, cy = j * h, cz = k * h;
           if (m_rigid) {
-            auto pos = m_rigid->position();
-            float rc_x = static_cast<float>(pos.x);
-            float rc_y = static_cast<float>(pos.y);
-            float rc_z = static_cast<float>(pos.z);
-            float dist = std::sqrt((cx - rc_x) * (cx - rc_x) +
-                                   (cy - rc_y) * (cy - rc_y) +
-                                   (cz - rc_z) * (cz - rc_z));
-            if (dist <= 9.41 * h) {
+            // auto pos = m_rigid->position();
+            // float rc_x = static_cast<float>(pos.x);
+            // float rc_y = static_cast<float>(pos.y);
+            // float rc_z = static_cast<float>(pos.z);
+            // float dist = std::sqrt((cx - rc_x) * (cx - rc_x) +
+            //                        (cy - rc_y) * (cy - rc_y) +
+            //                        (cz - rc_z) * (cz - rc_z));
+            if (m_rigid->is_inside(cx, cy, cz)) {
               is_rigid_body[index(i, j, k)] = true;
             } else {
               is_rigid_body[index(i, j, k)] = false;
@@ -1216,8 +1238,8 @@ struct Fluid {
     int highest_j = -1;
     for (int j = numY - 2; j >= 1; --j) {
       bool found = false;
-      for (int i = 1; i <= numX - 2 && !found; ++i) {
-        for (int k = 1; k <= numZ - 2; ++k) {
+      for (int i = 1; i <= 49 && !found; ++i) {
+        for (int k = 1; k <= 49; ++k) {
           if (filled[index(i, j, k)]) {
             found = true;
             break;
