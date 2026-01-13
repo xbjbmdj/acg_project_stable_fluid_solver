@@ -13,4 +13,4 @@ cmake --build . -j
 
 
 
-Input two numbers, separated by a space. The first number is # of grids side length, the second number is the time steps you need to simulate. e.g. 50 40
+Input two numbers, separated by a space. The first number is # of grids side length, the second number is the time steps you need to simulate. e.g. 120 101
