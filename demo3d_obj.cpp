@@ -12,17 +12,6 @@
 #include <thread>
 #include <vector>
 
-// 100*100*100每个时间步大约16秒（40个时间步总计用时9分41秒）
-// 输入100 51 用时2分26秒77
-
-// 修复代码中Container的错误，15分钟
-
-// 12.28更改Writeobj为立方体，17/15
-// 要不要改成矩阵，17/15分钟
-
-// 1.13处理刚体碰撞，50/30分钟
-
-
 //  Simple OBJ exporter: write a face on the interface where two adjacent voxels
 //  have different `filled` states. This is intentionally minimal: each face
 //  emits four vertices (no deduplication) and one quad face.
@@ -301,7 +290,11 @@ int main() {
       3200.0); // Example mass，如果mass=27，体积=27m^3，则密度和水完全一样
               // set body-space inertia for a 3m cube mass=10kg: I ~ 15 kg·m^2
               // on diag  如果半径为9.4，体积大约为4000
-  change3d::Mat3 Ibody(120000.0);//默认质量1000对应40000
+  change3d::Mat3 Ibody(120000.0); // 默认质量1000对应40000
+  // 设置非对角项为30000，形成非对称对角惯性张量
+  Ibody(0, 1) = Ibody(1, 0) = 3000.0;
+  Ibody(0, 2) = Ibody(2, 0) = 3000.0;
+  Ibody(1, 2) = Ibody(2, 1) = 3000.0;
   rigidBody.setInertiaBody(Ibody);
   rigidBody.setPosition(change3d::Vec3(
       30.0, 75.00, 30.0)); // Example initial position of the center
@@ -347,7 +340,7 @@ int main() {
 
   applyFreeSlip(f);
 
-  f.calculate_is_rigid_body(); // 计算刚体占据了哪些格子。
+  f.calculate_is_rigid_body(); 
   f.treat_rigid_as_container();
   f.initialize();
 
@@ -357,7 +350,6 @@ int main() {
     f.integrate(dt, 0.0, -8.0, 0.0);
 
     f.calculate_extended_velocity();
-    //输出精确到纳秒的时间
     auto now = std::chrono::high_resolution_clock::now();
     std::cout << "Current time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
 
@@ -366,139 +358,37 @@ int main() {
 
     now = std::chrono::high_resolution_clock::now();
     std::cout << "0Advect time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
-    // std::cout << "Step " << step << ": Information before projection" <<
-    // std::endl;
-    //     for(int i=4;i<=6;i++)
-    //       for(int j=7;j<=7;j++)
-    //         for(int k=4;k<=6;k++){
-    //             std::cout<<"filled["<<i<<","<<j<<","<<k<<"]="<<f.filled[f.index(i,j,k)]<<"\n";
-    //             std::cout<<"is_rigid_["<<i<<","<<j<<","<<k<<"]="<<f.is_rigid_body[f.index(i,j,k)]<<"\n";
-    //             std::cout<<"is_container_["<<i<<","<<j<<","<<k<<"]="<<f.is_container[f.index(i,j,k)]<<"\n";
-    //         }
-
-    // 统计有多少个格子被刚体占据并输出
-    // int rigid_occupied_count = 0;
-    // for (int i = 1; i <= f.numX - 2; i++)
-    //   for (int j = 1; j <= f.numY - 2; j++)
-    //     for (int k = 1; k <= f.numZ - 2; k++) {
-    //       int c = f.index(i, j, k);
-    //       if (f.is_rigid_body[c]) {
-    //         rigid_occupied_count++;
-    //       }
-    //     }
-    // std::cout << "Rigid body occupies " << rigid_occupied_count << " cells.\n";
     f.Project(0, f.h, f.h, f.h, dt);
-
     now = std::chrono::high_resolution_clock::now();
     std::cout << "Project time (ns): " << std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count() << "\n";
 
-    // std::cout << "Step " << step << ": after Project" << std::endl;
-    // 已经包含了对于刚体位置的更新
-    // 输出刚体的中心的位置
-    // change3d::Vec3 rigidPos_ = f.m_rigid->position();
-    // std::cout << "Rigid Body Position: (" << rigidPos_.x << ", " <<
-    // rigidPos_.y << ", " << rigidPos_.z << ")\n";
 
     f.force_zero(0);
     // std::cout << "Step " << step << ": after force_zero(0) (post-Project)" <<
     // std::endl;
     f.calculate_extended_velocity();
-    // std::cout << "Step " << step << ": after calculate_extended_velocity
-    // (post-Project)" << std::endl;
+
+    // Update marker particles for 4 times.
     f.update_particles(dt/4);
     f.update_particles(dt/4);
     f.update_particles(dt/4);
     f.update_particles(dt/4);
-    // std::cout << "Step " << step << ": after update_particles" << std::endl;
-    //  f.calculate_is_rigid_body();//计算刚体占据了哪些格子。
-    //  f.treat_rigid_as_container(1);
     f.check_filled(0); // 检查哪些格子有液体
     f.after_check_filled();
     f.store_is_rigid_body();
-    f.calculate_is_rigid_body(); // 计算刚体占据了哪些格子。
+    f.calculate_is_rigid_body(); 
     f.treat_rigid_as_container();
     f.replace_rigid_body_fluid();
-    // 如果一个格子上一步is_rigid_body是true，这一帧却变成false了，说明刚体离开了这个格子，那么需要用流体填充这个格子
-
-    // for(int i=4;i<=6;i++)
-    //   for(int j=7;j<=7;j++)
-    //     for(int k=4;k<=6;k++){
-    //         std::cout<<"filled["<<i<<","<<j<<","<<k<<"]="<<f.filled[f.index(i,j,k)]<<"\n";
-    //     }
 
     f.print_highest_fluid_block();
 
-    //输出哪些高为47的网格是container
-
-    // for (int i = 1; i <= f.numX - 2; i++)
-    //   for (int k = 1; k <= f.numZ - 2; k++) {
-    //     int c = f.index(i, 47, k);
-    //     if (f.is_container[c]) {
-    //       std::cout << "Container at (" << i << ",47," << k << ")\n";
-    //     }
-    //   }
-    //   for (int i = 1; i <= f.numX - 2; i++)
-    //   for (int k = 1; k <= f.numZ - 2; k++) {
-    //     int c = f.index(i, 47, k);
-    //     if (f.is_rigid_body[c]) {
-    //       std::cout << "Rigid body at (" << i << ",47," << k << ")\n";
-    //     }
-    //   }
-    if (step % 5 ==0) {
+    if (step % 1 ==0) {
       std::ostringstream oname;
-      oname << "011301bunny_120_" << step << ".obj";
+      oname << "0114try2_bunny_150_" << step << ".obj";
       writeOBJFromFluid(f, oname.str(), 1.0);
     }
     // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   }
   return 0;
 }
-// export PATH=$PATH:/snap/bin
-// export PATH=/usr/local/cuda/bin:$PATH
-// export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-// ulimit -s unlimited
-// 渲染主要使用：blender --background --python ds2.py
-// 视频生成主要使用：（在具有很多图片的那个文件夹里面）
-//ffmpeg -framerate 10 -pattern_type glob -i 'ball_*_render.png' -c:v libx264 -pix_fmt yuv420p out.mp4
 
-//mkdir -p build/longrun2 && find build -maxdepth 1 -type f -name '1228ball_*' -exec mv {} build/longrun/ \;
-
-/*
-mkdir -p tmp_seq
-i=1
-for f in $(printf "%s\n" 1229bunny_120_*_render.png | sort -V); do
-  ln -sf "$PWD/$f" tmp_seq/$(printf "img%03d.png" $i)
-  i=$((i+1))
-done
-ffmpeg -framerate 20 -i tmp_seq/img%03d.png -c:v libx264 -pix_fmt yuv420p out_20.mp4
-rm -r tmp_seq
-*/
-/*
-Step 80
-Rigid body occupies 3371 cells.
-CG converged in 189 iterations, residual: 1.78335e-05
-Original Force Jp=8061.79
-Gravity Added: -8000
--1066.38 61.7905 2727.12 -1994.72 861.336 232.475
-Rigid Body Position Before Update: (34.0267, 7.75577, 33.2608)
-Rigid Body Position After Update: (34.3285, 7.39662, 33.5666)
-Rigid Body Linear Velocity After Update: (3.01742, -3.59145, 3.05842)
-Highest fluid block at y = 91 (grid j=91)
-Wrote OBJ: ball_80.obj (faces: 48171)
-
-*/
-
-
-//运行
-/*
-cd /home/oier/acgpj_change3d/build
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=native ..
-cmake --build . -j
-或者
-
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.6/bin/nvcc ..
-cmake --build . -j
-
-
-*/
-//140是最后一个有效时间步
