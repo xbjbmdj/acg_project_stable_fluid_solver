@@ -247,7 +247,7 @@ void writeOBJFromFluid(const Fluid &f, const std::string &filename,
   // 六个面使用材料 GreenBox（应在 MTL 中定义）
   {
     double minx = 80.0, miny = 0.0, minz = 80.0;
-    double maxx = 120.0, maxy = 40.0, maxz = 120.0;
+    double maxx = 150.0, maxy = 40.0, maxz = 150.0;
     out << "g AddedBox\n";
     out << "usemtl GreenBox\n";
     // vertices
@@ -287,9 +287,7 @@ int main() {
   // Initialize RigidBody
   change3d::RigidBody rigidBody;
   rigidBody.setMass(
-      3200.0); // Example mass，如果mass=27，体积=27m^3，则密度和水完全一样
-              // set body-space inertia for a 3m cube mass=10kg: I ~ 15 kg·m^2
-              // on diag  如果半径为9.4，体积大约为4000
+      3200.0); 
   change3d::Mat3 Ibody(120000.0); // 默认质量1000对应40000
   // 设置非对角项为30000，形成非对称对角惯性张量
   Ibody(0, 1) = Ibody(1, 0) = 3000.0;
