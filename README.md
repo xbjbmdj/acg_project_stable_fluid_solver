@@ -1,6 +1,9 @@
 # acg_project_stable_fluid_solver
 叉院第三学期《高等计算机图形学》课程项目：Stam的stable fluid算法。流体求解器。
 
+To watch the demos, please download bunny_out_20.mp4 and ball_out_20.mp4
+
+
 <video src="bunny_out_20.mp4" controls width="720">
   Your browser does not support the video tag.
 </video>
