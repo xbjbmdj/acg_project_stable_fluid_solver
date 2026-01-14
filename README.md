@@ -1,6 +1,10 @@
 # acg_project_stable_fluid_solver
 叉院第三学期《高等计算机图形学》课程项目：Stam的stable fluid算法。流体求解器。
 
+<video src="bunny_out_20.mp4" controls width="720">
+  Your browser does not support the video tag.
+</video>
+
 ## Code Structure
 
 - CMakeLists.txt
@@ -24,6 +28,14 @@ cmake --build . -j
 ```
 
 Before simulation, put your .obj file in ./build, and change the path in solid.h from "bunny_200.obj" to your filename.  
+
+## Rendering
+
+```bash
+blender --background --python render_script.py
+```
+
+
 
 Input two numbers, separated by a space. The first number is # of grids side length, the second number is the time steps you need to simulate. e.g. 150 101
 
