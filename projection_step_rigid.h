@@ -153,7 +153,7 @@ class pressure_solver {
   }
   bool solve(bool print, int gridtype[345][345][345], int n_dim,
              std::vector<double> d, std::vector<double>& p,
-             float J[10][23455678], double constant_B, float rigid_m[10],
+             float J[10][23455678], double constant_B, const double Minv[6][6],
              bool gpu = 1) {
     // runtime tuning to reduce per-thread memory and arenas (help WSL2)
     // setenv("MALLOC_ARENA_MAX", "1", 1);
@@ -195,17 +195,19 @@ class pressure_solver {
         }
       }
     // std::cout<<"Successfully built A matrix components and d\n";
-    //  Precompute scaleBase = constant_B * (1.0 / rigid_m[m]) for modes 1..6
+    // 预先计算缩放后的广义质量逆矩阵 constant_B * Minv（6x6，允许非对角）
     const int num_modes = 6;
-    std::array<double, 7> scaleBase{{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}};
-    for (int m = 1; m <= num_modes; ++m) {
-      scaleBase[m] = constant_B * (1.0 / rigid_m[m]);
+    std::array<std::array<double, num_modes>, num_modes> Minv_scaled{};
+    for (int r = 0; r < num_modes; ++r) {
+      for (int c = 0; c < num_modes; ++c) {
+        Minv_scaled[r][c] = constant_B * Minv[r][c];
+      }
     }
 
-    auto cpu_A_mult = [&rigid_m, &scaleBase, &J, &Adiag, &Adiagminusi,
-                       &Adiagminusj, &Adiagplusi, &Adiagplusj, &Adiagplusk,
-                       &Adiagminusk, n_dim](const std::vector<double>& x,
-                                            std::vector<double>& result) {
+    auto cpu_A_mult = [&Minv_scaled, &J, &Adiag, &Adiagminusi, &Adiagminusj,
+               &Adiagplusi, &Adiagplusj, &Adiagplusk, &Adiagminusk,
+               n_dim, num_modes](const std::vector<double>& x,
+                       std::vector<double>& result) {
       const size_t total = (size_t)n_dim * n_dim * n_dim;
       // result.resize(total);
 
@@ -234,13 +236,13 @@ class pressure_solver {
       // 2) add the contribution of J * M^{-1} * J^T
       // Fuse the J*x reductions into a single pass to reduce memory traffic,
       // and then do a single pass to add contributions for all modes.
-      std::array<double, 7> temp;
+      std::array<double, num_modes> temp{};
       temp.fill(0.0);
 
 #if CG_USE_OPENMP
       // Parallel fused reduction: each thread accumulates into a local array
       int nt = omp_get_max_threads();
-      std::vector<std::array<double, 7>> local_acc(nt);
+      std::vector<std::array<double, num_modes>> local_acc(nt);
       for (int ti = 0; ti < nt; ++ti) local_acc[ti].fill(0.0);
 
 #pragma omp parallel
@@ -250,30 +252,34 @@ class pressure_solver {
 #pragma omp for schedule(static)
         for (size_t c = 0; c < total; ++c) {
           double xc = x[c];
-          for (int m = 1; m <= num_modes; ++m) local[m] += (double)J[m][c] * xc;
+          for (int m = 0; m < num_modes; ++m) local[m] += (double)J[m + 1][c] * xc;
         }
       }
       // reduce per-thread accumulators
       for (int ti = 0; ti < nt; ++ti)
-        for (int m = 1; m <= num_modes; ++m) temp[m] += local_acc[ti][m];
+        for (int m = 0; m < num_modes; ++m) temp[m] += local_acc[ti][m];
 #else
       for (size_t c = 0; c < total; ++c) {
         double xc = x[c];
-        for (int m = 1; m <= num_modes; ++m) temp[m] += (double)J[m][c] * xc;
+        for (int m = 0; m < num_modes; ++m) temp[m] += (double)J[m + 1][c] * xc;
       }
 #endif
 
       // compute scaled contributions and add in a single pass
-      std::array<double, 7> scale;
+      std::array<double, num_modes> scale{};
       scale.fill(0.0);
-      for (int m = 1; m <= num_modes; ++m) scale[m] = scaleBase[m] * temp[m];
+      for (int r = 0; r < num_modes; ++r) {
+        double acc = 0.0;
+        for (int c = 0; c < num_modes; ++c) acc += Minv_scaled[r][c] * temp[c];
+        scale[r] = acc;
+      }
 
 #if CG_USE_OPENMP
 #pragma omp parallel for schedule(static)
 #endif
       for (size_t t = 0; t < total; ++t) {
         double acc = 0.0;
-        for (int m = 1; m <= num_modes; ++m) acc += scale[m] * (double)J[m][t];
+        for (int m = 0; m < num_modes; ++m) acc += scale[m] * (double)J[m + 1][t];
         result[t] += acc;
       }
     };
@@ -283,15 +289,19 @@ class pressure_solver {
       return success;
     }
 
-    std::array<double, 6> scaleBase_gpu{};
-    for (int m = 0; m < num_modes; ++m) scaleBase_gpu[m] = scaleBase[m + 1];
+    std::array<double, num_modes * num_modes> Minv_gpu{};
+    for (int r = 0; r < num_modes; ++r) {
+      for (int c = 0; c < num_modes; ++c) {
+        Minv_gpu[(size_t)r * num_modes + c] = Minv_scaled[r][c];
+      }
+    }
     const std::size_t J_stride = 23455678;  // matches declared J row length
     const float* J_ptr = &J[1][0];
 
     bool use_gpu = gpu_amult_init(
         n_dim, Adiag.data(), Adiagplusi.data(), Adiagplusj.data(),
         Adiagplusk.data(), Adiagminusi.data(), Adiagminusj.data(),
-        Adiagminusk.data(), J_ptr, J_stride, scaleBase_gpu.data(), num_modes);
+        Adiagminusk.data(), J_ptr, J_stride, Minv_gpu.data(), num_modes);
 
     bool success = false;
     if (use_gpu) {

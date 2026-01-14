@@ -514,16 +514,55 @@ struct Fluid {
       rigid_v[5] = static_cast<float>(ang.y);
       rigid_v[6] = static_cast<float>(ang.z);
     }
-    // 用rigid_m表示广义质量
-    float rigid_m[10] = {0.0f};
+    // 全6x6广义质量逆矩阵（未含constant_B），允许惯性张量出现非对角项
+    double Minv[6][6] = {{0.0}};
     if (m_rigid) {
-      rigid_m[1] = static_cast<float>(m_rigid->mass());
-      rigid_m[2] = static_cast<float>(m_rigid->mass());
-      rigid_m[3] = static_cast<float>(m_rigid->mass());
+      double mass = static_cast<double>(m_rigid->mass());
+      if (mass > 0.0) {
+        Minv[0][0] = Minv[1][1] = Minv[2][2] = 1.0 / mass;
+      }
+
       auto I = m_rigid->m_inertiaBody;
-      rigid_m[4] = static_cast<float>(I(0, 0));
-      rigid_m[5] = static_cast<float>(I(1, 1));
-      rigid_m[6] = static_cast<float>(I(2, 2));
+      double inertia[3][3] = {
+          {static_cast<double>(I(0, 0)), static_cast<double>(I(0, 1)), static_cast<double>(I(0, 2))},
+          {static_cast<double>(I(1, 0)), static_cast<double>(I(1, 1)), static_cast<double>(I(1, 2))},
+          {static_cast<double>(I(2, 0)), static_cast<double>(I(2, 1)), static_cast<double>(I(2, 2))}};
+
+      auto invert3x3 = [](const double m[3][3], double out[3][3]) {
+        double det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+                     m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                     m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+        if (std::abs(det) < 1e-12) return false;
+        double inv_det = 1.0 / det;
+        out[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det;
+        out[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det;
+        out[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det;
+
+        out[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det;
+        out[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det;
+        out[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det;
+
+        out[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det;
+        out[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det;
+        out[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det;
+        return true;
+      };
+
+      double inv_inertia[3][3] = {{0.0}};
+      bool inv_ok = invert3x3(inertia, inv_inertia);
+      if (!inv_ok) {
+        // 回退为只用对角元素，避免奇异矩阵导致崩溃
+        for (int a = 0; a < 3; ++a) {
+          inv_inertia[a][a] = (std::abs(inertia[a][a]) > 1e-12)
+                                  ? 1.0 / inertia[a][a]
+                                  : 0.0;
+        }
+      }
+      for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 3; ++c) {
+          Minv[r + 3][c + 3] = inv_inertia[r][c];
+        }
+      }
     }
 
     float fc_x, fc_y, fc_z;  // face_center
@@ -682,7 +721,7 @@ struct Fluid {
     double constant_B;
     constant_B = density * density * h * h * h;
     bool success = P.solve(need_print, gridtype, numX - 2, d, p_sol, J,
-                           constant_B, rigid_m);
+                 constant_B, Minv);
     // 得到的p_sol的下标的格式还是projection_solver中的格式
     if (!success) {
       std::cout << "Pressure solve failed!" << std::endl;
