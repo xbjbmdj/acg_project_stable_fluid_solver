@@ -15,7 +15,7 @@ struct GpuContext {
     int num_modes = 0;
     std::size_t total = 0; // n_dim^3
 
-    // device buffers
+    // GPU处的缓冲区指针，用于存放向量
     float* d_Adiag = nullptr;
     float* d_Adiagplusi = nullptr;
     float* d_Adiagplusj = nullptr;
@@ -132,11 +132,8 @@ bool gpu_amult_init(int n_dim,
     if (!allocate_diag(g_ctx.total, Adiagminusj, &g_ctx.d_Adiagminusj)) return false;
     if (!allocate_diag(g_ctx.total, Adiagminusk, &g_ctx.d_Adiagminusk)) return false;
 
-    // allocate vectors
     CHECK_CUDA(cudaMalloc((void**)&g_ctx.d_x, g_ctx.total * sizeof(float)));
     CHECK_CUDA(cudaMalloc((void**)&g_ctx.d_result, g_ctx.total * sizeof(float)));
-
-    // small buffers
     CHECK_CUDA(cudaMalloc((void**)&g_ctx.d_temp, num_modes * sizeof(float)));
     CHECK_CUDA(cudaMalloc((void**)&g_ctx.d_scale, num_modes * sizeof(float)));
 
@@ -176,51 +173,52 @@ bool gpu_amult_init(int n_dim,
     return true;
 }
 
-void gpu_amult(const std::vector<double>& x, std::vector<double>& result) {
-    if (g_ctx.n_dim == 0) {
-        std::cerr << "gpu_amult called before init" << std::endl;
-        return;
-    }
-    if (x.size() < g_ctx.total) {
-        std::cerr << "gpu_amult: input size too small" << std::endl;
-        return;
-    }
-    result.resize(g_ctx.total);
+// void gpu_amult(const std::vector<double>& x, std::vector<double>& result) {
+//     // Function to Calculate Ax
+//     if (g_ctx.n_dim == 0) {
+//         std::cerr << "gpu_amult called before init" << std::endl;
+//         return;
+//     }
+//     if (x.size() < g_ctx.total) {
+//         std::cerr << "gpu_amult: input size too small" << std::endl;
+//         return;
+//     }
+//     result.resize(g_ctx.total);
 
-    // copy x (double) to device float buffer
-    std::vector<float> xf(g_ctx.total);
-    for (size_t i = 0; i < g_ctx.total; ++i) xf[i] = static_cast<float>(x[i]);
-    cudaMemcpy(g_ctx.d_x, xf.data(), g_ctx.total * sizeof(float), cudaMemcpyHostToDevice);
+//     // copy x (double) to device float buffer
+//     std::vector<float> xf(g_ctx.total);
+//     for (size_t i = 0; i < g_ctx.total; ++i) xf[i] = static_cast<float>(x[i]);
+//     cudaMemcpy(g_ctx.d_x, xf.data(), g_ctx.total * sizeof(float), cudaMemcpyHostToDevice);
 
-    // stencil part
-    int threads = 256;
-    int blocks = (int)((g_ctx.total + threads - 1) / threads);
-    stencil_kernel<<<blocks, threads>>>(g_ctx.n_dim, g_ctx.total,
-        g_ctx.d_Adiag, g_ctx.d_Adiagplusi, g_ctx.d_Adiagplusj, g_ctx.d_Adiagplusk,
-        g_ctx.d_Adiagminusi, g_ctx.d_Adiagminusj, g_ctx.d_Adiagminusk,
-        g_ctx.d_x, g_ctx.d_result);
+//     // stencil part
+//     int threads = 256;
+//     int blocks = (int)((g_ctx.total + threads - 1) / threads);
+//     stencil_kernel<<<blocks, threads>>>(g_ctx.n_dim, g_ctx.total,
+//         g_ctx.d_Adiag, g_ctx.d_Adiagplusi, g_ctx.d_Adiagplusj, g_ctx.d_Adiagplusk,
+//         g_ctx.d_Adiagminusi, g_ctx.d_Adiagminusj, g_ctx.d_Adiagminusk,
+//         g_ctx.d_x, g_ctx.d_result);
 
-    // temp = J * x
-    const float alpha = 1.0f;
-    const float beta0 = 0.0f;
-    cublasSgemv(g_ctx.handle, CUBLAS_OP_N, g_ctx.num_modes, (int)g_ctx.total,
-                &alpha, g_ctx.d_J, g_ctx.num_modes, g_ctx.d_x, 1, &beta0, g_ctx.d_temp, 1);
+//     // temp = J * x
+//     const float alpha = 1.0f;
+//     const float beta0 = 0.0f;
+//     cublasSgemv(g_ctx.handle, CUBLAS_OP_N, g_ctx.num_modes, (int)g_ctx.total,
+//                 &alpha, g_ctx.d_J, g_ctx.num_modes, g_ctx.d_x, 1, &beta0, g_ctx.d_temp, 1);
 
-    // scale = scaleBase * temp
-    int mThreads = 128;
-    int mBlocks = (g_ctx.num_modes + mThreads - 1) / mThreads;
-    scale_kernel<<<mBlocks, mThreads>>>(g_ctx.d_temp, g_ctx.d_scaleBase, g_ctx.d_scale, g_ctx.num_modes);
+//     // scale = scaleBase * temp
+//     int mThreads = 128;
+//     int mBlocks = (g_ctx.num_modes + mThreads - 1) / mThreads;
+//     scale_kernel<<<mBlocks, mThreads>>>(g_ctx.d_temp, g_ctx.d_scaleBase, g_ctx.d_scale, g_ctx.num_modes);
 
-    // result += J^T * scale
-    const float beta1 = 1.0f;
-    cublasSgemv(g_ctx.handle, CUBLAS_OP_T, g_ctx.num_modes, (int)g_ctx.total,
-                &alpha, g_ctx.d_J, g_ctx.num_modes, g_ctx.d_scale, 1, &beta1, g_ctx.d_result, 1);
+//     // result += J^T * scale
+//     const float beta1 = 1.0f;
+//     cublasSgemv(g_ctx.handle, CUBLAS_OP_T, g_ctx.num_modes, (int)g_ctx.total,
+//                 &alpha, g_ctx.d_J, g_ctx.num_modes, g_ctx.d_scale, 1, &beta1, g_ctx.d_result, 1);
 
-    // copy back (float -> double)
-    std::vector<float> rf(g_ctx.total);
-    cudaMemcpy(rf.data(), g_ctx.d_result, g_ctx.total * sizeof(float), cudaMemcpyDeviceToHost);
-    for (size_t i = 0; i < g_ctx.total; ++i) result[i] = static_cast<double>(rf[i]);
-}
+//     // copy back (float -> double)
+//     std::vector<float> rf(g_ctx.total);
+//     cudaMemcpy(rf.data(), g_ctx.d_result, g_ctx.total * sizeof(float), cudaMemcpyDeviceToHost);
+//     for (size_t i = 0; i < g_ctx.total; ++i) result[i] = static_cast<double>(rf[i]);
+// }
 
 // Device-only A*x using already-uploaded matrix, no host transfers.
 static bool gpu_amult_device(const float* d_x, float* d_out) {
@@ -251,11 +249,13 @@ static bool gpu_amult_device(const float* d_x, float* d_out) {
 }
 
 // Fully GPU-resident Conjugate Gradient using the uploaded matrix.
+// the main function
 bool gpu_cg_solve(const std::vector<double>& d_host,
                   std::vector<double>& p_host,
                   double tol,
                   int max_iter,
                   const std::vector<double>* p0) {
+    
     if (g_ctx.n_dim == 0 || g_ctx.handle == nullptr) {
         std::cerr << "gpu_cg_solve called before gpu_amult_init" << std::endl;
         return false;
